@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Corazón de Partículas</title>
+  <style>
+    html,body{height:100%;margin:0;background:#0b1020;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    #wrap{height:100%;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+    canvas{display:block}
+    .message{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;
+      color:#ffd1dc;font-size:28px;font-weight:700;letter-spacing:0.4px;opacity:0;transition:opacity 1s ease, transform 1s ease;pointer-events:none
+    }
+    .message.show{opacity:1;transform:translate(-50%,-40%)}
+    .sub{display:block;font-size:18px;color:#ffd6e4;font-weight:500;margin-top:10px}
+    .credit{position:absolute;right:12px;bottom:10px;color:#93a0bf;font-size:12px}
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="c"></canvas>
+    <div class="message" id="msg">Eres tan hermosa que no me puedo sacar de mi mente ;P<span class="sub">—</span></div>
+    <div class="credit">Hecho con ❤️</div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width = innerWidth;
+  let H = canvas.height = innerHeight;
+
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = W * DPR; canvas.height = H * DPR; canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.scale(DPR, DPR);
+
+  let particles = [];
+  const NUM = Math.min(6000, Math.floor((W*H)/1000) + 2000); // aún más partículas
+  const center = {x: W/2, y: H/2};
+  const scale = Math.min(W, H) / 32; // heart scale
+
+  // Parametric heart function (classic)
+  function heartPoint(t){
+    const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+    return {x: x * scale, y: -y * scale};
+  }
+
+  function generateTargets(count){
+    const targets = [];
+    for(let i=0;i<count*1.4;i++){
+      const t = Math.random() * Math.PI * 2;
+      const p = heartPoint(t);
+      const r = Math.random()*0.55 + 0.45;
+      targets.push({x: center.x + p.x * r, y: center.y + p.y * r});
+    }
+    return targets;
+  }
+
+  const targets = generateTargets(NUM);
+
+  function Particle(x,y,target){
+    this.x = x; this.y = y;
+    this.vx = (Math.random()-0.5)*2; this.vy = (Math.random()-0.5)*2;
+    this.size = Math.random()*2.2 + 0.8; // partículas un poco más grandes
+    this.hue = 0; // rojo puro
+    this.alpha = 0.9;
+    this.target = target;
+    this.delay = Math.random()*1200;
+    this.start = performance.now();
+  }
+
+  Particle.prototype.update = function(now){
+    const dt = now - this.start;
+    if(dt < this.delay){
+      this.x += Math.sin((now + this.size*123) / 400) * 0.3;
+      this.y += Math.cos((now + this.size*321) / 500) * 0.2;
+      return;
+    }
+    const ease = 0.08;
+    const tx = this.target.x + Math.sin(now/800 + this.size*5) * 0.6;
+    const ty = this.target.y + Math.cos(now/700 + this.size*6) * 0.6;
+    const ax = (tx - this.x) * ease;
+    const ay = (ty - this.y) * ease;
+    this.vx = this.vx*0.86 + ax;
+    this.vy = this.vy*0.86 + ay;
+    this.x += this.vx;
+    this.y += this.vy;
+    const d2 = (this.x - this.target.x)**2 + (this.y - this.target.y)**2;
+    if(d2 < 25*25) this.alpha = Math.max(0.5, this.alpha - 0.004);
+  };
+
+  Particle.prototype.draw = function(){
+    ctx.beginPath();
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = `hsla(${this.hue}, 90%, 50%, ${this.alpha})`; // rojo
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+  };
+
+  for(let i=0;i<NUM;i++){
+    const startX = Math.random()*W;
+    const startY = Math.random()*H;
+    const t = targets[i % targets.length];
+    particles.push(new Particle(startX, startY, t));
+  }
+
+  let settled = false;
+  let settleTime = 0;
+  const revealDelay = 1200;
+
+  function draw(now){
+    now = now || performance.now();
+    ctx.clearRect(0,0,W,H);
+
+    const grd = ctx.createRadialGradient(center.x, center.y - H*0.06, 10, center.x, center.y, Math.max(W,H));
+    grd.addColorStop(0, 'rgba(255,80,80,0.08)');
+    grd.addColorStop(1, 'rgba(11,16,32,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0,0,W,H);
+
+    let totalClose = 0;
+    for(const p of particles){
+      p.update(now);
+      p.draw();
+      const dx = p.x - p.target.x;
+      const dy = p.y - p.target.y;
+      if(dx*dx + dy*dy < 16*16) totalClose++;
+    }
+
+    if(!settled && totalClose > particles.length * 0.86){
+      settled = true;
+      settleTime = now;
+      for(const p of particles){ p.vx *= 0.2; p.vy *= 0.2; }
+    }
+
+    if(settled){
+      ctx.beginPath();
+      for(let t=0; t<=Math.PI*2; t+=0.06){
+        const p = heartPoint(t);
+        const x = center.x + p.x;
+        const y = center.y + p.y;
+        if(t===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255,100,100,0.25)';
+      ctx.lineWidth = 2.2; ctx.stroke();
+    }
+
+    const msgEl = document.getElementById('msg');
+    if(settled && now - settleTime > revealDelay){ msgEl.classList.add('show'); }
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+
+  window.addEventListener('resize', ()=>{
+    W = canvas.width = innerWidth;
+    H = canvas.height = innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR; canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    center.x = W/2; center.y = H/2;
+    const newScale = Math.min(W, H) / 32;
+    for(let i=0;i<targets.length;i++){
+      const t = Math.random()*Math.PI*2;
+      const p = heartPoint(t);
+      targets[i] = {x: center.x + p.x, y: center.y + p.y};
+    }
+    for(let i=0;i<particles.length;i++) particles[i].target = targets[i % targets.length];
+  });
+
+  window.addEventListener('click', ()=>{
+    for(const p of particles){
+      p.x = Math.random()*W; p.y = Math.random()*H; p.vx = (Math.random()-0.5)*4; p.vy = (Math.random()-0.5)*4; p.alpha = 0.95; p.start = performance.now(); p.delay = Math.random()*1200; p.target = targets[Math.floor(Math.random()*targets.length)];
+    }
+    settled = false;
+    document.getElementById('msg').classList.remove('show');
+  });
+
+})();
+</script>
+</body>
+</html>
